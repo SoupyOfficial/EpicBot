@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact build-on-make="true" name="epicbot">
+    <output-path>$USER_HOME$/EpicBot/Scripts</output-path>
+    <root id="root">
+      <element id="module-output" name="epicbot" />
+    </root>
+  </artifact>
+</component>

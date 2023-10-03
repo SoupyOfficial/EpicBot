@@ -13,6 +13,7 @@ import com.epicbot.api.shared.util.details.Completable;
 import com.epicbot.api.shared.util.paint.frame.PaintFrame;
 import com.epicbot.api.shared.util.time.Time;
 import com.epicbot.api.shared.webwalking.model.RSBank;
+import org.jetbrains.annotations.Nullable;
 
 import java.awt.*;
 import java.util.Arrays;
@@ -256,6 +257,7 @@ public class VarrockWestWoodcutting extends LoopScript {
         ctx.mouse().moveOffScreen();
     }
 
+    @Nullable
     private SceneObject getTargetTree() {
         System.out.println("Selecting target tree");
         List<SceneObject> objects = ctx.objects().query().nameMatches("Tree").within(TREE_AREA).asList();
@@ -268,9 +270,9 @@ public class VarrockWestWoodcutting extends LoopScript {
         return null;
     }
 
-    private SceneObject getNearestTree() {
-        return ctx.objects().query().nameMatches("Tree").reachable().results().nearest();
-    }
+//    private SceneObject getNearestTree() {
+//        return ctx.objects().query().nameMatches("Tree").reachable().results().nearest();
+//    }
 
     private boolean isPlayerInteracting() {
         return player.isAnimating() || player.isMoving();

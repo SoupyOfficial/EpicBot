@@ -1,12 +1,15 @@
 import com.epicbot.api.shared.APIContext;
 import com.epicbot.api.shared.GameType;
 import com.epicbot.api.shared.entity.NPC;
+import com.epicbot.api.shared.entity.SceneObject;
 import com.epicbot.api.shared.entity.details.Locatable;
 import com.epicbot.api.shared.methods.IInventoryAPI;
 import com.epicbot.api.shared.methods.ILocalPlayerAPI;
 import com.epicbot.api.shared.methods.ITabsAPI;
 import com.epicbot.api.shared.model.Area;
+import com.epicbot.api.shared.model.SceneOffset;
 import com.epicbot.api.shared.model.Skill;
+import com.epicbot.api.shared.model.Tile;
 import com.epicbot.api.shared.script.LoopScript;
 import com.epicbot.api.shared.script.ScriptManifest;
 import com.epicbot.api.shared.util.Random;
@@ -16,20 +19,21 @@ import com.epicbot.api.shared.util.time.Time;
 import com.epicbot.api.shared.webwalking.model.RSBank;
 
 import java.awt.*;
+import java.util.List;
 
-@ScriptManifest(name = "Draynor Fishing", gameType = GameType.OS)
-public class DraynorFishing extends LoopScript {
+@ScriptManifest(name = "Rune Essence", gameType = GameType.OS)
+public class RuneEssence extends LoopScript {
 
     // Script Progress
     public int startEXP;
     public int earnedEXP;
     public int startLVL;
     public int earnedLVL;
-    public int fishToLevel;
+    public int essenceToLevel;
     int randomsHandled = 0;
-    int fishCount = 0;
+    int essenceCount = 0;
     private long startTime;
-    double fishPerMinute;
+    double essencePerMinute;
     double timeToLevelMinutes;
     double experiencePerHour;
     String timeToLevelFormatted;
@@ -40,22 +44,25 @@ public class DraynorFishing extends LoopScript {
     APIContext ctx;
     ILocalPlayerAPI player;
     IInventoryAPI inventory;
-    Skill fishing;
+    Skill mining;
 
     // Location and Type Modifiers
-    Area FISH_AREA = new Area(3084, 3226, 3087, 3233);
-    Area SAFE_AREA = new Area(3082, 3224, 3087, 3233);
-    int shrimpId = 317;
-    int anchoviesId = 321;
+    Area TELEPORT_AREA = new Area(3252, 3399, 3254, 3402);
+    Area ESSENCE_AREA = new Area(8800, 2435, 8810, 2446);
+
+    int mineEssenceId = 34773;
+    int essenceId = 1436;
+    int teleNPC = 11435;
+    SceneObject obj;
 
     @Override
     public boolean onStart(String... strings) {
         ctx = getAPIContext();
         player = ctx.localPlayer();
         inventory = ctx.inventory();
-        fishing = ctx.skills().fishing();
-        startEXP = fishing.getExperience();
-        startLVL = fishing.getCurrentLevel();
+        mining = ctx.skills().mining();
+        startEXP = mining.getExperience();
+        startLVL = mining.getCurrentLevel();
         startTime = System.currentTimeMillis();
         return true;
     }
@@ -68,17 +75,17 @@ public class DraynorFishing extends LoopScript {
 
     @Override
     protected void onPaint(Graphics2D g, APIContext ctx) {
-        PaintFrame frame = new PaintFrame("Draynor Fishing ");
+        PaintFrame frame = new PaintFrame("Rune Essence ");
         frame.addLine("Random Events Handled:", randomsHandled);
-        frame.addLine("Fish caught:", fishCount + inventory.getCount(shrimpId, anchoviesId));
-        frame.addLine("Current Level:", fishing.getCurrentLevel());
+        frame.addLine("Essence mined:", essenceCount + inventory.getCount(essenceId));
+        frame.addLine("Current Level:", mining.getCurrentLevel());
         frame.addLine("Levels Earned:", earnedLVL);
-        frame.addLine("Fish Till Next Level", fishToLevel);
-        frame.addLine("Current Experience:", fishing.getExperience());
+        frame.addLine("Essence Till Next Level", essenceToLevel);
+        frame.addLine("Current Experience:", mining.getExperience());
         frame.addLine("Experience Earned:", earnedEXP);
-        frame.addLine("Experience to Next Level:", fishing.getExperienceToNextLevel());
-        frame.addLine("Percent to Next Level:", fishing.getPercentToNextLevel() + "%");
-        frame.addLine("Fish Per Minute:", String.format("%.2f", fishPerMinute));
+        frame.addLine("Experience to Next Level:", mining.getExperienceToNextLevel());
+        frame.addLine("Percent to Next Level:", mining.getPercentToNextLevel() + "%");
+        frame.addLine("Essence Per Minute:", String.format("%.2f", essencePerMinute));
         frame.addLine("Experience Per Hour:", String.format("%.2f", experiencePerHour));
         frame.addLine("Time to Level HH:MM:", timeToLevelFormatted);
         frame.addLine("Runtime HH:MM:SS:", runtimeFormatted);
@@ -92,17 +99,17 @@ public class DraynorFishing extends LoopScript {
         handleLevelUpdates();
         focusInventoryTab();
 //        int[] axes = availableAxes();
+        obj = ctx.objects().query().id(mineEssenceId).reachable().results().nearest();
 
         //check if axe is equipped
-
         if(inventory.isFull())
-            bankFish();
+            bankEssence();
 
-        if(!inventory.isFull() && !SAFE_AREA.contains(player.getLocation()))
-            walkToFish();
+        if(!inventory.isFull())
+            walkToEssence();
 
-        if(!isPlayerInteracting() && SAFE_AREA.contains(player.getLocation())) {
-            handleFishing();
+        if(!isPlayerInteracting() && obj != null) {
+            handleEssence();
         }
 
         //return negative to stop loop
@@ -111,8 +118,8 @@ public class DraynorFishing extends LoopScript {
 
     private void handleLevelUpdates() {
         if(startEXP == 0 || startLVL == 0) {
-            startEXP = fishing.getExperience();
-            startLVL = fishing.getCurrentLevel();
+            startEXP = mining.getExperience();
+            startLVL = mining.getCurrentLevel();
         }
 
         runtime = System.currentTimeMillis() - startTime;
@@ -120,27 +127,27 @@ public class DraynorFishing extends LoopScript {
         long minutes = (long) (runtime / (1000 * 60)) % 60;    // Milliseconds to minutes
         long seconds = (long) (runtime / 1000) % 60;           // Milliseconds to seconds
         runtimeFormatted = String.format("%02d:%02d:%02d", hours, minutes, seconds);
-        fishPerMinute = (double) (fishCount + inventory.getCount(shrimpId, anchoviesId)) / (runtime / 60000.0);
-        timeToLevelMinutes = fishing.getExperienceToNextLevel() / (fishPerMinute * 10);
+        essencePerMinute = (double) (essenceCount + inventory.getCount(essenceId)) / (runtime / 60000.0);
+        timeToLevelMinutes = mining.getExperienceToNextLevel() / (essencePerMinute * 10);
         hours = (long) (timeToLevelMinutes / 60);
         minutes = (long) (timeToLevelMinutes % 60);
         timeToLevelFormatted = String.format("%02d:%02d", hours, minutes);
-        earnedEXP = fishing.getExperience() - startEXP;
-        earnedLVL = fishing.getCurrentLevel() - startLVL;
+        earnedEXP = mining.getExperience() - startEXP;
+        earnedLVL = mining.getCurrentLevel() - startLVL;
         experiencePerHour = (double) earnedEXP / (runtime / 3600000.0);
-        fishToLevel =(int) Math.ceil(fishing.getExperienceToNextLevel() / 10.0);
+        essenceToLevel =(int) Math.ceil(mining.getExperienceToNextLevel() / 10.0);
     }
 
-    private void handleFishing() {
-        NPC fish = getTargetFish();
-        if(fish != null) {
-            System.out.println("Catching Fish");
+    private void handleEssence() {
+        SceneObject essence = getTargetEssence();
+        if(obj != null) {
+            System.out.println("Mining Essence");
             //System.out.println(fish);
             //if tree player interacting with is cut by another player, check if the SceneObject exists and if not find new tree
-            fish.getLocation().interact();
+            obj.getLocation().interact();
             delay();
         } else {
-            System.out.println("No Fishing Spot");
+            System.out.println("No Essence Found");
         }
     }
 
@@ -162,9 +169,16 @@ public class DraynorFishing extends LoopScript {
         ctx.mouse().moveOffScreen();
     }
 
-    private NPC getTargetFish() {
-        System.out.println("Selecting target fishing spot");
-        return ctx.npcs().query().id(1525).results().nearest();
+    private SceneObject getTargetEssence() {
+        System.out.println("Selecting target essence");
+        List<SceneObject> objects = ctx.objects().query().id(mineEssenceId).asList();
+        if (!objects.isEmpty()) {
+            objects.sort(new DistanceComparator());
+            return objects.get(Random.nextInt(0, Math.min(3, objects.size()-1))); //Pick random target from closest 3 trees (or however many there are)
+        }
+        else
+            System.out.println("No Essence Found");
+        return null;
     }
 
     private boolean isPlayerInteracting() {
@@ -180,31 +194,42 @@ public class DraynorFishing extends LoopScript {
         Time.sleep(Random.nextInt(600, Time.getHumanReaction()));
     }
 
-    private void bankFish() {
+    private void bankEssence() {
         walkToBank();
-        depositFish();
+        depositEssence();
     }
 
     private void walkToBank() {
-        System.out.println("Walking to Draynor");
-        ctx.webWalking().walkToBank(RSBank.DRAYNOR);
+        System.out.println("Walking to Varrock East");
+        NPC portal = ctx.npcs().query().nameMatches("Portal").results().nearest();
+        ctx.webWalking().walkTo(portal.randomize(2,2));
+        portal.click();
+        obj = null;
+        delay();
+        ctx.webWalking().walkToBank(RSBank.VARROCK_EAST);
     }
 
-    private void depositFish() {
-        System.out.println("Depositing fish in bank");
+    private void depositEssence() {
+        System.out.println("Depositing essence in bank");
         delay(() -> ctx.bank().open());
-        delay(() -> ctx.bank().depositAllExcept(303));
-        fishCount += 28;
+        delay(() -> ctx.bank().depositInventory());
+        essenceCount += 28;
         delay(() -> ctx.bank().close());
     }
 
-    private void walkToFish() {
-        System.out.println("Walking to fish area");
-        Locatable fish = FISH_AREA.getRandomTile();
-//        if(fish.canReach(ctx)) {
-            ctx.webWalking().walkTo(fish);
+    private void walkToEssence() {
+        System.out.println("Walking to teleport area");
+        Locatable area = TELEPORT_AREA.getRandomTile();
+        if(area.canReach(ctx)) {
+            ctx.webWalking().walkTo(area);
             delay();
-//        }
-//        else System.out.println("Invalid Tile");
+            ctx.npcs().query().id(teleNPC).reachable().results().nearest().interact("Teleport");
+            delay();
+        }
+        System.out.println("Walking to essence area");
+        SceneOffset pos = new SceneOffset(26, 66, 34, 77);
+        ctx.webWalking().walkTo(obj.getLocation().randomize(6, 6));
+//        area = ESSENCE_AREA.getRandomTile();
+//        ctx.webWalking().walkTo(area);
     }
 }

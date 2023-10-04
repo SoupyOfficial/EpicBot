@@ -62,10 +62,6 @@ public class LumbridgeChicken extends LoopScript {
 
         attackChicken();
 
-        while (getAPIContext().localPlayer().isAnimating() || getAPIContext().localPlayer().isMoving() || getAPIContext().localPlayer().isInCombat() || getAPIContext().localPlayer().isAttacking()) {
-
-        }
-
         Time.sleep(Random.nextInt(1500, 1850));
 
         //Collect feathers

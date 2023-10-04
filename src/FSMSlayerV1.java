@@ -5,7 +5,6 @@ import com.epicbot.api.shared.entity.NPC;
 import com.epicbot.api.shared.methods.*;
 import com.epicbot.api.shared.model.Area;
 import com.epicbot.api.shared.model.Skill;
-import com.epicbot.api.shared.model.Tile;
 import com.epicbot.api.shared.script.LoopScript;
 import com.epicbot.api.shared.script.ScriptManifest;
 import com.epicbot.api.shared.util.Random;
@@ -15,8 +14,8 @@ import com.epicbot.api.shared.util.time.Time;
 
 import java.awt.*;
 
-@ScriptManifest(name = "Chicken Slayer FSM 1.6", gameType = GameType.OS)
-public class FSMSlayer extends LoopScript {
+@ScriptManifest(name = "Chicken Slayer FSM 1.0", gameType = GameType.OS)
+public class FSMSlayerV1 extends LoopScript {
 
     private Status status = Status.WALKING_TO_CHICKEN_FIELD;
     public IInventoryAPI myInventory() { return getAPIContext().inventory(); }
@@ -36,11 +35,25 @@ public class FSMSlayer extends LoopScript {
     int featherCount = 0;
     int boneCount = 0;
 
-    NPC chicken;
-
+    public int startAttackEXP;
+    public int earnedEXP;
+    public int startAttackLVL;
+    public int earnedLVL;
+    public int chickenToLevel;
+    private long startTime;
+    double chickenPerMinute;
+    double timeToLevelMinutes;
+    double experiencePerHour;
+    String timeToLevelFormatted;
+    double runtime;
+    String runtimeFormatted;
     @Override
     public boolean onStart(String... strings) {
         System.out.println("Starting " + getManifest().name());
+
+        startAttackEXP = getAPIContext().skills().attack().getExperience();
+        startAttackLVL = getAPIContext().skills().attack().getCurrentLevel();
+        startTime = System.currentTimeMillis();
         return true;
     }
 
@@ -77,6 +90,7 @@ public class FSMSlayer extends LoopScript {
     protected int loop() {
 
         doTasks();
+        handleLevelUpdates();
 
         return 600;
     }
@@ -92,8 +106,14 @@ public class FSMSlayer extends LoopScript {
             case FIGHTING_CHICKEN:
                 doFightChicken();
                 break;
+            case COLLECTING_FEATHERS:
+                doCollectFeathers();
+                break;
             case INTERACT_FEATHERS:
                 doInteractFeathers();
+                break;
+            case COLLECTING_BONES:
+                doCollectBones();
                 break;
             case INTERACT_BONES:
                 doInteractBones();
@@ -120,16 +140,17 @@ public class FSMSlayer extends LoopScript {
 
     public void doAttackChicken() {
         //search for chicken
-        chicken = getAPIContext().npcs().query().nameMatches("Chicken").reachable().results().nearest();
+        NPC chicken = getAPIContext().npcs().query().nameMatches("Chicken").reachable().results().nearest();
 
         //Attack chicken
         if (chicken != null && !chicken.isVisible()) {
             getAPIContext().camera().turnTo(chicken.getLocation().randomize(2, 2, 2));
         } else if (chicken != null && chicken.isVisible()) {
             System.out.println("Attack Chicken");
-            chicken.interact("Attack");
+            delay(() -> chicken.interact("Attack"));
+            Time.sleep(Random.nextInt(1200, 1800));
             delay();
-            if(myPlayer().getInteracting() != null) {
+            if(chicken.getHealthPercent() == 0.0) {
                 status = Status.FIGHTING_CHICKEN;
             }
         }
@@ -137,10 +158,9 @@ public class FSMSlayer extends LoopScript {
     }
 
     public void doFightChicken() {
-        if(chicken.getHealthPercent() == 0) {
+        if(myPlayer().getInteracting() == null) {
             preFeatherCount = myInventory().getCount(true,314);
             chickenCount++;
-            Time.sleep(Random.nextInt(1200, 1800));
             status = Status.INTERACT_FEATHERS;
         }
         return;
@@ -161,12 +181,22 @@ public class FSMSlayer extends LoopScript {
             if (!feather.isVisible()) {
                 getAPIContext().camera().turnTo(feather.getLocation().randomize(2, 2, 2));
             }
-            feather.interact("Take");
-            delay();
-            System.out.println("Feathers Collected");
-            featherCount += myInventory().getCount(true,314) - preFeatherCount;
+            delay(() -> feather.interact("Take"));
+            Time.sleep(650);
+            status = Status.COLLECTING_FEATHERS;
+        } else {
             status = Status.INTERACT_BONES;
+        }
+        return;
+    }
 
+    public void doCollectFeathers() {
+        if(myInventory().getCount(true,314) > preFeatherCount) {
+            System.out.println("Feathers Collected");
+            featherCount += 5;
+            status = Status.INTERACT_BONES;
+        } else {
+            status = Status.INTERACT_FEATHERS;
         }
         return;
     }
@@ -178,12 +208,23 @@ public class FSMSlayer extends LoopScript {
             if (!bones.isVisible()) {
                 getAPIContext().camera().turnTo(bones.getLocation().randomize(2, 2, 2));
             }
-            bones.interact("Take");
-            delay();
-            boneCount++;
-            System.out.println("Bones Collected");
+            delay(() -> bones.interact("Take"));
+            preBoneCount = myInventory().getCount(true,526);
+            Time.sleep(650);
+            status = Status.COLLECTING_BONES;
+        } else {
             status = Status.BURYING_BONES;
+        }
+        return;
+    }
 
+    public void doCollectBones() {
+        if(myInventory().getCount(true,526) > preBoneCount) {
+            System.out.println("Bones Collected");
+            boneCount++;
+            status = Status.BURYING_BONES;
+        } else {
+            status = Status.INTERACT_BONES;
         }
         return;
     }
@@ -191,8 +232,8 @@ public class FSMSlayer extends LoopScript {
     public void doBuryBones() {
         //Bury bones
         while(myInventory().contains("Bones")) {
-            myInventory().interactItem("Bury", "Bones");
-            delay();
+            delay(() -> myInventory().getItem("Bones").click());
+//            Time.sleep(Random.nextInt(1350, 1450));
         }
         System.out.println("Bones Buried");
         status = Status.DROPPING_EXCESS;
@@ -209,12 +250,41 @@ public class FSMSlayer extends LoopScript {
         frame.addLine("Feathers Collected:", featherCount);
         frame.addLine("Bones Collected:", boneCount);
         frame.addLine("Current Attack Level:", attack().getCurrentLevel());
-        frame.addLine("Chickens to level:", String.format("%.02f", attack().getExperienceToNextLevel() / 12.0));
         frame.addLine("Percent to Next Attack Level:", attack().getPercentToNextLevel() + "%");
+        frame.addLine("Chickens Till Next Level", chickenToLevel);
+        frame.addLine("Current Attack Experience:", getAPIContext().skills().attack().getExperience());
+        frame.addLine("Attack Experience Earned:", earnedEXP);
+        frame.addLine("Experience to Next Attack Level:", getAPIContext().skills().attack().getExperienceToNextLevel());
+        frame.addLine("Chicken Per Minute:", String.format("%.2f", chickenPerMinute));
+        frame.addLine("Attack Experience Per Hour:", String.format("%.2f", experiencePerHour));
+        frame.addLine("Time to Next Attack Level HH:MM:", timeToLevelFormatted);
         frame.addLine("Current Prayer Level:", prayer().getCurrentLevel());
-        frame.addLine("Bones to level:", String.format("%.02f", prayer().getExperienceToNextLevel() / 4.5));
+        frame.addLine("Bones to level:", (int) Math.ceil(prayer().getExperienceToNextLevel() / 4.5));
         frame.addLine("Percent to Next Prayer Level:", prayer().getPercentToNextLevel() + "%");
+        frame.addLine("Runtime HH:MM:SS:", runtimeFormatted);
         frame.draw(g, 0, 25, ctx);
+    }
+
+    private void handleLevelUpdates() {
+        if(startAttackEXP == 0 || startAttackLVL == 0) {
+            startAttackEXP = getAPIContext().skills().attack().getExperience();
+            startAttackLVL = getAPIContext().skills().attack().getCurrentLevel();
+        }
+
+        runtime = System.currentTimeMillis() - startTime;
+        long hours = (long) (runtime / (1000 * 60 * 60)) % 24; // Milliseconds to hours
+        long minutes = (long) (runtime / (1000 * 60)) % 60;    // Milliseconds to minutes
+        long seconds = (long) (runtime / 1000) % 60;           // Milliseconds to seconds
+        runtimeFormatted = String.format("%02d:%02d:%02d", hours, minutes, seconds);
+        chickenPerMinute = (double) (chickenCount) / (runtime / 60000.0);
+        timeToLevelMinutes = getAPIContext().skills().attack().getExperienceToNextLevel() / (chickenPerMinute * 12);
+        hours = (long) (timeToLevelMinutes / 60);
+        minutes = (long) (timeToLevelMinutes % 60);
+        timeToLevelFormatted = String.format("%02d:%02d", hours, minutes);
+        earnedEXP = getAPIContext().skills().attack().getExperience() - startAttackEXP;
+        earnedLVL = getAPIContext().skills().attack().getCurrentLevel() - startAttackLVL;
+        experiencePerHour = (double) earnedEXP / (runtime / 3600000.0);
+        chickenToLevel =(int) Math.ceil(getAPIContext().skills().attack().getExperienceToNextLevel() / 12.0);
     }
 
     private boolean isPlayerInteracting() {
@@ -222,11 +292,11 @@ public class FSMSlayer extends LoopScript {
     }
 
     public void delay() {
-        Time.sleep(10000, this::isPlayerInteracting);
+        Time.sleep(5000, this::isPlayerInteracting);
         Time.sleep(Random.nextInt(600, Time.getHumanReaction()));
     }
     public void delay(Completable completable) {
-        Time.sleep(10000, completable);
+        Time.sleep(5000, completable);
         Time.sleep(Random.nextInt(600, Time.getHumanReaction()));
     }
 }

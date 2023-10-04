@@ -51,6 +51,7 @@ public class VarrockEastMining extends LoopScript {
     int tinId = 438;
     int copperId = 436;
     boolean mineTin = true;
+    SceneObject currentOre;
 
     @Override
     public boolean onStart(String... strings) {
@@ -74,7 +75,7 @@ public class VarrockEastMining extends LoopScript {
     protected void onPaint(Graphics2D g, APIContext ctx) {
         PaintFrame frame = new PaintFrame("Varrock West Woodcutting ");
         frame.addLine("Random Events Handled:", randomsHandled);
-        frame.addLine("Ores mined:", oreCount + inventory.getCount(tinId, copperId));
+        frame.addLine("Ores mined:", oreCount + inventory.getCount(440));
         frame.addLine("Current Level:", mining.getCurrentLevel());
         frame.addLine("Levels Earned:", earnedLVL);
         frame.addLine("Ores Till Next Level", oresToLevel);
@@ -94,6 +95,7 @@ public class VarrockEastMining extends LoopScript {
         handleRandomNPC();
         handleLevelUpdates();
         focusInventoryTab();
+        handleCancelAnimation();
 //        int[] axes = availableAxes();
 
         //check if axe is equipped
@@ -123,23 +125,31 @@ public class VarrockEastMining extends LoopScript {
         long minutes = (long) (runtime / (1000 * 60)) % 60;    // Milliseconds to minutes
         long seconds = (long) (runtime / 1000) % 60;           // Milliseconds to seconds
         runtimeFormatted = String.format("%02d:%02d:%02d", hours, minutes, seconds);
-        oresPerMinute = (double) (oreCount + inventory.getCount(tinId, copperId)) / (runtime / 60000.0);
-        timeToLevelMinutes = mining.getExperienceToNextLevel() / (oresPerMinute * 17.5);
+        oresPerMinute = (double) (oreCount + inventory.getCount(440)) / (runtime / 60000.0);
+        timeToLevelMinutes = mining.getExperienceToNextLevel() / (oresPerMinute * 35);
         hours = (long) (timeToLevelMinutes / 60);
         minutes = (long) (timeToLevelMinutes % 60);
         timeToLevelFormatted = String.format("%02d:%02d", hours, minutes);
         earnedEXP = mining.getExperience() - startEXP;
         earnedLVL = mining.getCurrentLevel() - startLVL;
         experiencePerHour = (double) earnedEXP / (runtime / 3600000.0);
-        oresToLevel =(int) Math.ceil(mining.getExperienceToNextLevel() / 17.5);
+        oresToLevel =(int) Math.ceil(mining.getExperienceToNextLevel() / 35);
+    }
+
+    private void handleCancelAnimation() {
+        if (currentOre != null)
+            if(!currentOre.isOnMap(ctx)) {
+                System.out.println("Cancel Animation");
+                handleMineOre();
+            }
     }
 
     private void handleMineOre() {
-        SceneObject ore = getTargetOre();
-        if(ore != null) {
+        currentOre = getTargetOre();
+        if(currentOre != null) {
             System.out.println("Mining Ore");
             //if tree player interacting with is cut by another player, check if the SceneObject exists and if not find new tree
-            delay(ore::click);
+            delay(currentOre::click);
             Time.sleep(Random.nextInt(600, 900));
         } else {
             System.out.println("No Ore Found");
@@ -166,11 +176,13 @@ public class VarrockEastMining extends LoopScript {
 
     private SceneObject getTargetOre() {
         System.out.println("Selecting target ore");
-        List<SceneObject> objects;
-        if(inventory.getCount(tinId) < 14)
-            objects = ctx.objects().query().nameMatches("Tin rocks").within(ORE_AREA).asList();
-        else
-            objects = ctx.objects().query().nameMatches("Copper rocks").within(ORE_AREA).asList();
+//        List<SceneObject> objects;
+//        if(inventory.getCount(tinId) < 14)
+//            objects = ctx.objects().query().nameMatches("Tin rocks").within(ORE_AREA).asList();
+//        else
+//            objects = ctx.objects().query().nameMatches("Copper rocks").within(ORE_AREA).asList();
+        List<SceneObject> objects = ctx.objects().query().nameMatches("Iron rocks").within(ORE_AREA).asList();
+
         mineTin = !mineTin;
         if (!objects.isEmpty()) {
             objects.sort(new DistanceComparator());

@@ -10,6 +10,7 @@ import com.epicbot.api.shared.model.Area;
 import com.epicbot.api.shared.model.SceneOffset;
 import com.epicbot.api.shared.model.Skill;
 import com.epicbot.api.shared.model.Tile;
+import com.epicbot.api.shared.model.path.TilePath;
 import com.epicbot.api.shared.script.LoopScript;
 import com.epicbot.api.shared.script.ScriptManifest;
 import com.epicbot.api.shared.util.Random;
@@ -17,6 +18,7 @@ import com.epicbot.api.shared.util.details.Completable;
 import com.epicbot.api.shared.util.paint.frame.PaintFrame;
 import com.epicbot.api.shared.util.time.Time;
 import com.epicbot.api.shared.webwalking.model.RSBank;
+import com.epicbot.commons.w.j.w.j.Ra;
 
 import java.awt.*;
 import java.util.List;
@@ -53,6 +55,7 @@ public class RuneEssence extends LoopScript {
     int mineEssenceId = 34773;
     int essenceId = 1436;
     int teleNPC = 11435;
+    int ladderId = 743;
     SceneObject obj;
 
     @Override
@@ -106,9 +109,12 @@ public class RuneEssence extends LoopScript {
             bankEssence();
 
         if(!inventory.isFull())
+            teleToEssence();
+
+        if(player.getLocation().getX() > 5000 || !ESSENCE_AREA.contains(player.getLocation()))
             walkToEssence();
 
-        if(!isPlayerInteracting() && obj != null) {
+        if(!isPlayerInteracting() && player.getLocation().getX() > 5000) {
             handleEssence();
         }
 
@@ -186,11 +192,11 @@ public class RuneEssence extends LoopScript {
     }
 
     public void delay() {
-        Time.sleep(10000, this::isPlayerInteracting);
+        Time.sleep(3000, this::isPlayerInteracting);
         Time.sleep(Random.nextInt(600, Time.getHumanReaction()));
     }
     public void delay(Completable completable) {
-        Time.sleep(10000, completable);
+        Time.sleep(3000, completable);
         Time.sleep(Random.nextInt(600, Time.getHumanReaction()));
     }
 
@@ -201,9 +207,23 @@ public class RuneEssence extends LoopScript {
 
     private void walkToBank() {
         System.out.println("Walking to Varrock East");
-        NPC portal = ctx.npcs().query().nameMatches("Portal").results().nearest();
-        ctx.webWalking().walkTo(portal.randomize(2,2));
-        portal.click();
+        SceneObject portal = ctx.objects().query().actions("Use").results().nearest();
+        if(portal == null) {
+            portal = ctx.objects().query().nameContains("Portal").results().nearest();
+            if (portal == null) {
+                NPC npcPortal = ctx.npcs().query().id(3088).results().nearest();
+                if (npcPortal == null)
+                    npcPortal = ctx.npcs().query().nameContains("Portal").results().nearest();
+                ctx.webWalking().walkTo(npcPortal.randomize(2, 2));
+                npcPortal.click();
+            } else {
+                ctx.webWalking().walkTo(portal.randomize(2,2));
+                portal.click();
+            }
+        } else {
+            ctx.webWalking().walkTo(portal.randomize(2,2));
+            portal.click();
+        }
         obj = null;
         delay();
         ctx.webWalking().walkToBank(RSBank.VARROCK_EAST);
@@ -217,7 +237,7 @@ public class RuneEssence extends LoopScript {
         delay(() -> ctx.bank().close());
     }
 
-    private void walkToEssence() {
+    private void teleToEssence() {
         System.out.println("Walking to teleport area");
         Locatable area = TELEPORT_AREA.getRandomTile();
         if(area.canReach(ctx)) {
@@ -225,11 +245,27 @@ public class RuneEssence extends LoopScript {
             delay();
             ctx.npcs().query().id(teleNPC).reachable().results().nearest().interact("Teleport");
             delay();
+            Time.sleep(Random.nextInt(600, 1200));
         }
+    }
+
+    private void walkToEssence() {
         System.out.println("Walking to essence area");
-        SceneOffset pos = new SceneOffset(26, 66, 34, 77);
-        ctx.webWalking().walkTo(obj.getLocation().randomize(6, 6));
-//        area = ESSENCE_AREA.getRandomTile();
-//        ctx.webWalking().walkTo(area);
+        obj = ctx.objects().query().id(mineEssenceId).reachable().results().nearest();
+
+        if( obj == null || !obj.canReach(ctx)) {
+            SceneObject ladder = ctx.objects().query().id(ladderId).results().nearest();
+
+            int ladderX = ladder.getX();
+            int ladderY = ladder.getY();
+
+            TilePath toEssence = new TilePath(
+                    new Tile(ladderX - 4, ladderY + 10),
+                    new Tile(ladderX - 12, ladderY + 15)
+            );
+
+            ctx.walking().walkPath(toEssence);
+        } else if (!obj.isVisible()) ctx.camera().turnTo(obj.randomize(2,2));
+        ESSENCE_AREA = new Area(obj.getLocation().getX() - 5, obj.getLocation().getY() - 5, obj.getLocation().getX() + 5, obj.getLocation().getY() + 5);
     }
 }
